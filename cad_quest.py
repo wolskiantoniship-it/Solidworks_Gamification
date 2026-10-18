@@ -8,10 +8,12 @@ Flow:
      screenshots (PNG/JPG) and optionally an STL export.
   5. Gemini checks your model and you get points.
 
+The interface (and Gemini's tasks) can be in English or Polish.
 Settings and history live in %APPDATA%\\CADQuest (outside the project folder).
 """
 
 import base64
+import ctypes
 import io
 import json
 import os
@@ -40,47 +42,212 @@ HISTORY_FILE = APP_DIR / "history.json"
 MAX_IMAGES = 6
 MAX_IMAGE_SIDE = 1568  # px - bigger screenshots only waste upload time
 
-# minutes = time limit, multiplier = points multiplier, scope = what Gemini should design
+# minutes = time limit, multiplier = points multiplier, scope = what Gemini should design,
+# color = button color when selected. The English key is what history.json stores.
 LEVELS = {
     "Beginner": {
         "minutes": 10,
         "multiplier": 1.0,
+        "color": "#15803d",
         "scope": "one simple part with 2-4 features: extrudes, cut-extrudes, a fillet or chamfer.",
     },
     "Intermediate": {
         "minutes": 20,
         "multiplier": 1.5,
+        "color": "#1d4ed8",
         "scope": "one part with 5-8 features: revolve, hole pattern, shell, ribs, fillets, chamfers.",
     },
     "Advanced": {
         "minutes": 35,
         "multiplier": 2.0,
+        "color": "#c2410c",
         "scope": "one complex part with 8-12 features, including at least one sweep or loft, draft and patterns.",
     },
     "Expert": {
         "minutes": 50,
         "multiplier": 3.0,
+        "color": "#b91c1c",
         "scope": "one demanding part with 12+ features: lofts, sweeps along 3D paths, variable fillets, "
         "patterns driven by other features, tight dimensional relations.",
     },
 }
 
-# (minimum XP, rank name)
+# (minimum XP, English name, Polish name)
 RANKS = [
-    (0, "Sketch Rookie"),
-    (300, "Extrude Apprentice"),
-    (1000, "Feature Engineer"),
-    (2500, "Loft Specialist"),
-    (5000, "CAD Legend"),
+    (0, "Sketch Rookie", "Nowicjusz Szkicu"),
+    (300, "Extrude Apprentice", "Czeladnik Wyciągnięć"),
+    (1000, "Feature Engineer", "Inżynier Operacji"),
+    (2500, "Loft Specialist", "Mistrz Profili"),
+    (5000, "CAD Legend", "Legenda CAD"),
 ]
 
-# Colors for the dark theme
-BG = "#1e1f26"
-PANEL = "#2a2c36"
-FG = "#e8e8f0"
-ACCENT = "#4fc3f7"
-GOOD = "#66bb6a"
-BAD = "#ef5350"
+# Colors (dark theme)
+BG = "#12141a"        # window background
+CARD = "#1b1e26"      # card background
+CARD2 = "#262a35"     # inputs, buttons, table header
+BORDER = "#2f3441"
+TEXT = "#e6e8ee"
+MUTED = "#8b90a0"
+ACCENT = "#38bdf8"    # sky blue
+ACCENT_HOVER = "#7dd3fc"
+PURPLE = "#a78bfa"
+GOOD = "#4ade80"
+BAD = "#f87171"
+GOLD = "#fbbf24"
+
+FONT = "Segoe UI"
+NUM_FONT = "Bahnschrift"  # built into Windows 10/11, nice for numbers and titles
+
+# ------------------------------------------------------------ translations --
+# Every text shown in the GUI lives here. self.t("key") picks the current language.
+
+TEXTS = {
+    "en": {
+        "subtitle": "Model fast. Model right. Level up.",
+        "level": "Level",
+        "level_Beginner": "Beginner",
+        "level_Intermediate": "Intermediate",
+        "level_Advanced": "Advanced",
+        "level_Expert": "Expert",
+        "level_info": "{minutes} min  ·  ×{mult}",
+        "api_box": "Gemini API key",
+        "api_hint": "free at aistudio.google.com",
+        "show": "Show",
+        "save_key": "Save key",
+        "model": "Model",
+        "refresh": "Refresh",
+        "key_note": "Stored as plain text in %APPDATA%\\CADQuest.\n"
+                    "Free tier: Google may use your inputs to improve its products.",
+        "recent": "Recent games",
+        "tile_rank": "Rank",
+        "tile_xp": "Total XP",
+        "tile_games": "Games",
+        "tile_avg": "Avg accuracy",
+        "tile_best": "Best game",
+        "next_rank": "{left} XP to {rank}",
+        "max_rank": "Highest rank reached!",
+        "col_date": "Date",
+        "col_level": "Level",
+        "col_task": "Task",
+        "col_time": "Time",
+        "col_accuracy": "Accuracy",
+        "col_points": "Points",
+        "gave_up_cell": "gave up",
+        "no_games": "No games yet. Press START!",
+        "start": "START",
+        "key_saved": "API key saved.",
+        "models_loading": "Loading model list...",
+        "models_found": "{n} models available.",
+        "need_key": "Enter your Gemini API key first.",
+        "designing": "Gemini is designing your challenge...",
+        "go": "GO!",
+        "limit": "limit {limit}",
+        "overall": "Overall size (X × Y × Z): {box} mm",
+        "done_hint": "Click a requirement to tick it off.\nWhen done: take screenshots (isometric + front/top/right) "
+                     "and optionally File > Save As > STL.",
+        "give_up": "Give up",
+        "finish": "FINISH & upload",
+        "give_up_q": "Give up this challenge? It counts as 0 points.",
+        "file_title": "Select screenshots (PNG/JPG) and optionally an STL file",
+        "file_types": "Model files",
+        "all_files": "All files",
+        "need_file": "Select at least one image or STL file.",
+        "checking_title": "Gemini is checking your model...",
+        "checking": "checking...",
+        "result": "Result",
+        "passed": "PASSED",
+        "failed": "NOT PASSED",
+        "result_line": "Accuracy {acc}%   ·   Time {time}   ·   Time bonus +{bonus}   ·   ×{mult}",
+        "rank_up": "RANK UP: {rank}!",
+        "feedback": "Feedback: ",
+        "close": "Close",
+        "err_key": "Your Gemini API key was rejected. Check it in the main window.",
+        "err_quota": "Free quota used up for this model (requests per minute or per day).\n"
+                     "Wait a bit, or pick another model in the main window.",
+        "err_model": "This model doesn't exist for your key. Click 'Refresh' and choose another.",
+        "err_api": "Gemini API error {code}: {message}",
+        "err_net": "Cannot reach the Gemini API. Check your internet connection.",
+        "err_blocked": "Gemini blocked the request (reason: {reason}). Try again.",
+        "err_empty": "Gemini returned no usable answer (finish reason: {reason}). Try again.",
+        "err_stl": "No triangles found in {name}.",
+    },
+    "pl": {
+        "subtitle": "Modeluj szybko. Modeluj dokładnie. Awansuj.",
+        "level": "Poziom",
+        "level_Beginner": "Początkujący",
+        "level_Intermediate": "Średniozaawansowany",
+        "level_Advanced": "Zaawansowany",
+        "level_Expert": "Ekspert",
+        "level_info": "{minutes} min  ·  ×{mult}",
+        "api_box": "Klucz API Gemini",
+        "api_hint": "darmowy na aistudio.google.com",
+        "show": "Pokaż",
+        "save_key": "Zapisz klucz",
+        "model": "Model",
+        "refresh": "Odśwież",
+        "key_note": "Zapisany jako zwykły tekst w %APPDATA%\\CADQuest.\n"
+                    "Darmowy plan: Google może używać przesłanych danych do ulepszania usług.",
+        "recent": "Ostatnie gry",
+        "tile_rank": "Ranga",
+        "tile_xp": "Suma XP",
+        "tile_games": "Gry",
+        "tile_avg": "Śr. dokładność",
+        "tile_best": "Najlepsza gra",
+        "next_rank": "{left} XP do rangi: {rank}",
+        "max_rank": "Osiągnięto najwyższą rangę!",
+        "col_date": "Data",
+        "col_level": "Poziom",
+        "col_task": "Zadanie",
+        "col_time": "Czas",
+        "col_accuracy": "Dokładność",
+        "col_points": "Punkty",
+        "gave_up_cell": "poddano",
+        "no_games": "Brak gier. Naciśnij START!",
+        "start": "START",
+        "key_saved": "Klucz API zapisany.",
+        "models_loading": "Wczytywanie listy modeli...",
+        "models_found": "Dostępne modele: {n}.",
+        "need_key": "Najpierw wpisz klucz API Gemini.",
+        "designing": "Gemini projektuje Twoje zadanie...",
+        "go": "START!",
+        "limit": "limit {limit}",
+        "overall": "Wymiary całkowite (X × Y × Z): {box} mm",
+        "done_hint": "Kliknij wymaganie, aby je odhaczyć.\nNa koniec: zrób zrzuty ekranu (izometria + przód/góra/prawo) "
+                     "i opcjonalnie Plik > Zapisz jako > STL.",
+        "give_up": "Poddaj się",
+        "finish": "KONIEC i prześlij",
+        "give_up_q": "Poddać się? Gra liczy się jako 0 punktów.",
+        "file_title": "Wybierz zrzuty ekranu (PNG/JPG) i opcjonalnie plik STL",
+        "file_types": "Pliki modelu",
+        "all_files": "Wszystkie pliki",
+        "need_file": "Wybierz co najmniej jeden obraz lub plik STL.",
+        "checking_title": "Gemini sprawdza Twój model...",
+        "checking": "sprawdzam...",
+        "result": "Wynik",
+        "passed": "ZALICZONE",
+        "failed": "NIEZALICZONE",
+        "result_line": "Dokładność {acc}%   ·   Czas {time}   ·   Bonus za czas +{bonus}   ·   ×{mult}",
+        "rank_up": "AWANS: {rank}!",
+        "feedback": "Uwagi: ",
+        "close": "Zamknij",
+        "err_key": "Klucz API Gemini został odrzucony. Sprawdź go w oknie głównym.",
+        "err_quota": "Wyczerpany darmowy limit dla tego modelu (na minutę lub na dzień).\n"
+                     "Odczekaj chwilę albo wybierz inny model w oknie głównym.",
+        "err_model": "Ten model nie jest dostępny dla Twojego klucza. Kliknij 'Odśwież' i wybierz inny.",
+        "err_api": "Błąd API Gemini {code}: {message}",
+        "err_net": "Brak połączenia z API Gemini. Sprawdź internet.",
+        "err_blocked": "Gemini zablokowało zapytanie (powód: {reason}). Spróbuj ponownie.",
+        "err_empty": "Gemini nie zwróciło poprawnej odpowiedzi (powód: {reason}). Spróbuj ponownie.",
+        "err_stl": "Nie znaleziono trójkątów w pliku {name}.",
+    },
+}
+
+# Extra instruction added to Gemini's prompt, so tasks and feedback come in the chosen language
+GEMINI_LANGUAGE = {
+    "en": "Write all text fields in English.",
+    "pl": "Write all text fields in Polish, using the Polish SolidWorks terminology "
+          "(e.g. 'Wyciągnięcie dodania', 'Wycięcie wyciągnięciem', 'Zaokrąglenie', 'Szyk kołowy').",
+}
 
 
 # ------------------------------------------------- structured Gemini output --
@@ -151,7 +318,7 @@ def load_json(path, default):
 
 def save_json(path, data):
     APP_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def format_time(seconds):
@@ -159,12 +326,13 @@ def format_time(seconds):
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
-def rank_for(xp):
-    name = RANKS[0][1]
-    for min_xp, rank_name in RANKS:
+def rank_index(xp):
+    """Index in RANKS of the highest rank reached with this much XP."""
+    index = 0
+    for i, (min_xp, _, _) in enumerate(RANKS):
         if xp >= min_xp:
-            name = rank_name
-    return name
+            index = i
+    return index
 
 
 def image_to_part(path):
@@ -197,7 +365,7 @@ def read_stl(path):
         triangles = [tuple(points[i:i + 3]) for i in range(0, len(points) - 2, 3)]
 
     if not triangles:
-        raise ValueError(f"No triangles found in {Path(path).name}")
+        raise ApiError("err_stl", name=Path(path).name)
 
     xs = [p[0] for t in triangles for p in t]
     ys = [p[1] for t in triangles for p in t]
@@ -227,7 +395,12 @@ def read_stl(path):
 
 
 class ApiError(Exception):
-    """An error with a message that is already friendly enough to show to the player."""
+    """An error the player should see. `key` points into TEXTS, so the GUI can translate it."""
+
+    def __init__(self, key, **params):
+        super().__init__(key)
+        self.key = key
+        self.params = params
 
 
 def gemini_request(api_key, path, body=None):
@@ -251,15 +424,14 @@ def gemini_request(api_key, path, body=None):
         except (ValueError, KeyError):
             message = error.reason
         if error.code in (400, 403) and "API key" in message:
-            raise ApiError("Your Gemini API key was rejected. Check it in the main window.")
+            raise ApiError("err_key")
         if error.code == 429:
-            raise ApiError("Free quota used up for this model (requests per minute or per day).\n"
-                           "Wait a bit, or pick another model in the main window.")
+            raise ApiError("err_quota")
         if error.code == 404:
-            raise ApiError("This model doesn't exist for your key. Click 'Refresh' and choose another.")
-        raise ApiError(f"Gemini API error {error.code}: {message}")
+            raise ApiError("err_model")
+        raise ApiError("err_api", code=error.code, message=message)
     except urllib.error.URLError:
-        raise ApiError("Cannot reach the Gemini API. Check your internet connection.")
+        raise ApiError("err_net")
 
 
 def ask_gemini(api_key, model, system, parts, schema):
@@ -273,16 +445,14 @@ def ask_gemini(api_key, model, system, parts, schema):
 
     candidates = answer.get("candidates", [])
     if not candidates:
-        reason = answer.get("promptFeedback", {}).get("blockReason", "unknown")
-        raise ApiError(f"Gemini blocked the request (reason: {reason}). Try again.")
+        raise ApiError("err_blocked", reason=answer.get("promptFeedback", {}).get("blockReason", "?"))
     parts = candidates[0].get("content", {}).get("parts", [])
     # Skip "thought" parts (some models return their reasoning separately)
     text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        reason = candidates[0].get("finishReason", "unknown")
-        raise ApiError(f"Gemini returned no usable answer (finish reason: {reason}). Try again.")
+        raise ApiError("err_empty", reason=candidates[0].get("finishReason", "?"))
 
 
 def list_models(api_key):
@@ -298,6 +468,38 @@ def list_models(api_key):
     return sorted(names)
 
 
+# ------------------------------------------------------------- GUI helpers --
+
+
+def make_button(parent, text, command, kind="normal", **options):
+    """A flat button with a hover effect. kind: 'primary', 'normal' or 'danger'."""
+    colors = {
+        "primary": (ACCENT, "#0b1220", ACCENT_HOVER),
+        "normal": (CARD2, TEXT, BORDER),
+        "danger": (CARD2, BAD, BORDER),
+    }
+    bg, fg, hover = colors[kind]
+    button = tk.Button(
+        parent, text=text, command=command, bg=bg, fg=fg, activebackground=hover, activeforeground=fg,
+        relief="flat", bd=0, cursor="hand2", padx=14, pady=6, font=(FONT, 10, "bold"), **options,
+    )
+    # <Enter>/<Leave> = mouse moves over / away from the widget
+    button.bind("<Enter>", lambda e: button.configure(bg=hover) if button["state"] == "normal" else None)
+    button.bind("<Leave>", lambda e: button.configure(bg=bg) if button["state"] == "normal" else None)
+    return button
+
+
+def make_card(parent, title=None):
+    """A dark rounded-looking panel with an optional small uppercase title. Returns the inner frame."""
+    outer = tk.Frame(parent, bg=CARD, highlightthickness=1, highlightbackground=BORDER)
+    inner = tk.Frame(outer, bg=CARD)
+    inner.pack(fill="both", expand=True, padx=14, pady=12)
+    if title:
+        tk.Label(inner, text=title.upper(), bg=CARD, fg=MUTED, font=(FONT, 8, "bold")).pack(anchor="w", pady=(0, 6))
+    inner.outer = outer  # so the caller can pack/grid the outer frame
+    return inner
+
+
 # ---------------------------------------------------------------------- app --
 
 
@@ -306,6 +508,8 @@ class CadQuestApp:
         self.root = root
         self.config = load_json(CONFIG_FILE, {})
         self.history = load_json(HISTORY_FILE, [])
+        self.lang = self.config.get("language", "en")
+        self.model_names = []
 
         # State of the current game
         self.task = None  # dict matching TASK_SCHEMA
@@ -315,8 +519,12 @@ class CadQuestApp:
         self.timer_running = False
         self.game_window = None
 
+        # Window sizes are in pixels, so scale them on high-DPI screens (e.g. 150% in Windows settings)
+        self.scale = root.winfo_fpixels("1i") / 96
+
         root.title("CAD Quest")
-        root.geometry("820x640")
+        root.geometry(self.size(900, 760) + "+40+10")
+        root.minsize(*map(int, self.size(760, 640).split("x")))
         root.configure(bg=BG)
         self.setup_styles()
         self.build_main_window()
@@ -324,86 +532,186 @@ class CadQuestApp:
         if self.api_key():
             self.refresh_models()
 
+    # ---------- small helpers ----------
+
+    def t(self, key, **params):
+        """Translated text for `key` in the current language, with {placeholders} filled in."""
+        text = TEXTS[self.lang].get(key, TEXTS["en"][key])
+        return text.format(**params)
+
+    def rank_name(self, index):
+        return RANKS[index][2 if self.lang == "pl" else 1]
+
+    def size(self, width, height):
+        """Window size string like '900x760', scaled for DPI and limited to the screen size."""
+        width = min(int(width * self.scale), self.root.winfo_screenwidth() - 40)
+        height = min(int(height * self.scale), self.root.winfo_screenheight() - 140)  # room for title bar + taskbar
+        return f"{width}x{height}"
+
     # ---------- look ----------
 
     def setup_styles(self):
         style = ttk.Style()
         style.theme_use("clam")
-        style.configure(".", background=BG, foreground=FG, fieldbackground=PANEL)
-        style.configure("TLabel", background=BG, foreground=FG, font=("Segoe UI", 10))
-        style.configure("Title.TLabel", font=("Segoe UI", 22, "bold"), foreground=ACCENT)
-        style.configure("Stat.TLabel", font=("Segoe UI", 11, "bold"))
-        style.configure("TLabelframe", background=BG, foreground=ACCENT)
-        style.configure("TLabelframe.Label", background=BG, foreground=ACCENT, font=("Segoe UI", 10, "bold"))
-        style.configure("TRadiobutton", background=BG, foreground=FG, font=("Segoe UI", 10))
-        style.configure("TCheckbutton", background=BG, foreground=FG)
-        style.configure("TButton", background=PANEL, foreground=FG, padding=6)
-        style.map("TButton", background=[("active", "#3a3d4a")])
-        style.configure("Start.TButton", font=("Segoe UI", 16, "bold"), foreground=BG, background=ACCENT, padding=12)
-        style.map("Start.TButton", background=[("active", "#81d4fa"), ("disabled", "#555")])
-        style.configure("Treeview", background=PANEL, foreground=FG, fieldbackground=PANEL, rowheight=24)
-        style.configure("Treeview.Heading", background="#33364a", foreground=FG)
+        style.configure("Treeview", background=CARD, foreground=TEXT, fieldbackground=CARD,
+                        rowheight=int(28 * self.scale), borderwidth=0, font=(FONT, 10))
+        style.configure("Treeview.Heading", background=CARD2, foreground=MUTED, relief="flat",
+                        font=(FONT, 9, "bold"))
+        style.map("Treeview", background=[("selected", BORDER)], foreground=[("selected", TEXT)])
+        style.map("Treeview.Heading", background=[("active", BORDER)])
+        style.layout("Treeview", [("Treeview.treearea", {"sticky": "nswe"})])  # removes the white border
+        style.configure("TCombobox", fieldbackground=CARD2, background=CARD2, foreground=TEXT,
+                        arrowcolor=TEXT, bordercolor=BORDER, lightcolor=CARD2, darkcolor=CARD2)
+        style.map("TCombobox", fieldbackground=[("readonly", CARD2)], foreground=[("readonly", TEXT)])
+        self.root.option_add("*TCombobox*Listbox.background", CARD2)
+        self.root.option_add("*TCombobox*Listbox.foreground", TEXT)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+        # Progress bars: one for XP, one for time (and a red one when time is over)
+        for name, color in (("XP", PURPLE), ("Time", ACCENT), ("Warn", GOLD), ("Over", BAD)):
+            style.configure(f"{name}.Horizontal.TProgressbar", troughcolor=CARD2, background=color,
+                            bordercolor=CARD2, lightcolor=color, darkcolor=color, thickness=int(8 * self.scale))
 
     # ---------- main window ----------
 
     def build_main_window(self):
-        ttk.Label(self.root, text="CAD QUEST", style="Title.TLabel").pack(pady=(14, 4))
-        ttk.Label(self.root, text="Model fast. Model right. Level up.").pack()
+        page = tk.Frame(self.root, bg=BG)
+        page.pack(fill="both", expand=True, padx=18, pady=14)
 
-        top = tk.Frame(self.root, bg=BG)
-        top.pack(fill="x", padx=16, pady=10)
+        # Header: title on the left, language switch on the right
+        header = tk.Frame(page, bg=BG)
+        header.pack(fill="x")
+        titles = tk.Frame(header, bg=BG)
+        titles.pack(side="left")
+        tk.Label(titles, text="CAD QUEST", bg=BG, fg=ACCENT, font=(NUM_FONT, 26, "bold")).pack(anchor="w")
+        tk.Label(titles, text=self.t("subtitle"), bg=BG, fg=MUTED, font=(FONT, 10)).pack(anchor="w")
 
-        # Level choice
-        level_box = ttk.LabelFrame(top, text="Level", padding=10)
-        level_box.pack(side="left", fill="y")
+        lang_box = tk.Frame(header, bg=CARD2)
+        lang_box.pack(side="right", anchor="n", pady=6)
+        for code in ("en", "pl"):
+            selected = code == self.lang
+            tk.Button(
+                lang_box, text=code.upper(), command=lambda c=code: self.set_language(c),
+                bg=ACCENT if selected else CARD2, fg="#0b1220" if selected else MUTED,
+                activebackground=ACCENT_HOVER, relief="flat", bd=0, cursor="hand2",
+                padx=12, pady=4, font=(FONT, 9, "bold"),
+            ).pack(side="left")
+
+        # Rank card with XP bar + stat tiles
+        rank_card = make_card(page)
+        rank_card.outer.pack(fill="x", pady=(12, 10))
+        self.rank_label = tk.Label(rank_card, bg=CARD, fg=GOLD, font=(NUM_FONT, 18, "bold"))
+        self.rank_label.pack(anchor="w")
+        self.xp_bar = ttk.Progressbar(rank_card, style="XP.Horizontal.TProgressbar", maximum=100)
+        self.xp_bar.pack(fill="x", pady=(6, 2))
+        self.next_rank_label = tk.Label(rank_card, bg=CARD, fg=MUTED, font=(FONT, 9))
+        self.next_rank_label.pack(anchor="w")
+
+        tiles = tk.Frame(rank_card, bg=CARD)
+        tiles.pack(fill="x", pady=(10, 0))
+        self.tile_values = {}
+        for column, key in enumerate(("tile_xp", "tile_games", "tile_avg", "tile_best")):
+            tile = tk.Frame(tiles, bg=CARD2)
+            tile.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 8, 0))
+            tiles.columnconfigure(column, weight=1)  # all tiles get equal width
+            value = tk.Label(tile, bg=CARD2, fg=TEXT, font=(NUM_FONT, 18, "bold"))
+            value.pack(anchor="w", padx=12, pady=(8, 0))
+            tk.Label(tile, text=self.t(key), bg=CARD2, fg=MUTED, font=(FONT, 9)).pack(anchor="w", padx=12, pady=(0, 8))
+            self.tile_values[key] = value
+
+        # Level + API key side by side
+        middle = tk.Frame(page, bg=BG)
+        middle.pack(fill="x")
+        middle.columnconfigure(1, weight=1)
+
+        level_card = make_card(middle, self.t("level"))
+        level_card.outer.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         self.level_var = tk.StringVar(value=self.config.get("level", "Beginner"))
         for name, info in LEVELS.items():
-            text = f"{name}  ({info['minutes']} min, x{info['multiplier']})"
-            ttk.Radiobutton(level_box, text=text, value=name, variable=self.level_var).pack(anchor="w", pady=2)
+            # indicatoron=0 -> a radio button that looks like a toggle button
+            tk.Radiobutton(
+                level_card, variable=self.level_var, value=name, indicatoron=0,
+                text=f"{self.t('level_' + name)}\n{self.t('level_info', minutes=info['minutes'], mult=info['multiplier'])}",
+                justify="left", anchor="w", width=20, padx=12, pady=5,
+                bg=CARD2, fg=TEXT, selectcolor=info["color"], activebackground=BORDER, activeforeground=TEXT,
+                relief="flat", bd=0, cursor="hand2", font=(FONT, 9, "bold"),
+            ).pack(fill="x", pady=2)
 
-        # API key + model
-        key_box = ttk.LabelFrame(top, text="Gemini API key (free at aistudio.google.com)", padding=10)
-        key_box.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        key_card = make_card(middle, f"{self.t('api_box')}  ·  {self.t('api_hint')}")
+        key_card.outer.grid(row=0, column=1, sticky="nsew")
         self.key_var = tk.StringVar(value=self.config.get("api_key", ""))
-        self.key_entry = ttk.Entry(key_box, textvariable=self.key_var, show="•", width=45)
-        self.key_entry.pack(fill="x")
-        row = tk.Frame(key_box, bg=BG)
-        row.pack(fill="x", pady=6)
+        self.key_entry = tk.Entry(
+            key_card, textvariable=self.key_var, show="•", bg=CARD2, fg=TEXT, insertbackground=TEXT,
+            relief="flat", highlightthickness=1, highlightbackground=BORDER, highlightcolor=ACCENT, font=(FONT, 10),
+        )
+        self.key_entry.pack(fill="x", ipady=5)
+        row = tk.Frame(key_card, bg=CARD)
+        row.pack(fill="x", pady=8)
         self.show_key = tk.BooleanVar(value=False)
-        ttk.Checkbutton(row, text="Show", variable=self.show_key, command=self.toggle_key).pack(side="left")
-        ttk.Button(row, text="Save key", command=self.save_key).pack(side="right")
+        tk.Checkbutton(row, text=self.t("show"), variable=self.show_key, command=self.toggle_key,
+                       bg=CARD, fg=TEXT, selectcolor=CARD2, activebackground=CARD, activeforeground=TEXT,
+                       font=(FONT, 9)).pack(side="left")
+        make_button(row, self.t("save_key"), self.save_key).pack(side="right")
 
-        model_row = tk.Frame(key_box, bg=BG)
-        model_row.pack(fill="x", pady=(0, 6))
-        ttk.Label(model_row, text="Model:").pack(side="left")
+        model_row = tk.Frame(key_card, bg=CARD)
+        model_row.pack(fill="x", pady=(0, 8))
+        tk.Label(model_row, text=self.t("model"), bg=CARD, fg=TEXT, font=(FONT, 9)).pack(side="left")
         self.model_var = tk.StringVar(value=self.config.get("model", DEFAULT_MODEL))
-        self.model_box = ttk.Combobox(model_row, textvariable=self.model_var, width=32)
-        self.model_box.pack(side="left", padx=6)
-        ttk.Button(model_row, text="Refresh", command=self.refresh_models).pack(side="right")
+        self.model_box = ttk.Combobox(model_row, textvariable=self.model_var, values=self.model_names)
+        self.model_box.pack(side="left", fill="x", expand=True, padx=8)
+        make_button(model_row, self.t("refresh"), self.refresh_models).pack(side="right")
 
-        ttk.Label(key_box, text="Key saved as plain text in %APPDATA%\\CADQuest\\config.json.\n"
-                                "Free tier: Google may use your inputs to improve its products.",
-                  foreground="#999").pack(anchor="w")
+        tk.Label(key_card, text=self.t("key_note"), bg=CARD, fg=MUTED, font=(FONT, 8),
+                 justify="left").pack(anchor="w")
 
-        # Stats
-        stats_box = ttk.LabelFrame(self.root, text="Your stats", padding=10)
-        stats_box.pack(fill="both", expand=True, padx=16)
-        self.summary_label = ttk.Label(stats_box, style="Stat.TLabel")
-        self.summary_label.pack(anchor="w", pady=(0, 6))
+        # Start - packed before the table with side="bottom", so it always stays visible
+        bottom = tk.Frame(page, bg=BG)
+        bottom.pack(side="bottom", fill="x")
+        self.start_button = tk.Button(
+            bottom, text=self.t("start"), command=self.start_game, bg=ACCENT, fg="#0b1220",
+            activebackground=ACCENT_HOVER, activeforeground="#0b1220", disabledforeground=MUTED,
+            relief="flat", bd=0, cursor="hand2", font=(NUM_FONT, 18, "bold"), padx=60, pady=8,
+        )
+        self.start_button.pack()
+        self.start_button.bind("<Enter>", lambda e: self.start_button["state"] == "normal"
+                               and self.start_button.configure(bg=ACCENT_HOVER))
+        self.start_button.bind("<Leave>", lambda e: self.start_button["state"] == "normal"
+                               and self.start_button.configure(bg=ACCENT))
+        self.status_label = tk.Label(bottom, text="", bg=BG, fg=MUTED, font=(FONT, 9))
+        self.status_label.pack(pady=(6, 0))
 
+        # Recent games table (takes the space that is left)
+        games_card = make_card(page, self.t("recent"))
+        games_card.outer.pack(fill="both", expand=True, pady=10)
         columns = ("date", "level", "task", "time", "accuracy", "points")
-        self.table = ttk.Treeview(stats_box, columns=columns, show="headings", height=8)
-        widths = {"date": 120, "level": 90, "task": 260, "time": 90, "accuracy": 80, "points": 70}
+        self.table = ttk.Treeview(games_card, columns=columns, show="headings", height=6)
+        widths = {"date": 120, "level": 130, "task": 280, "time": 70, "accuracy": 90, "points": 70}
         for col in columns:
-            self.table.heading(col, text=col.capitalize())
-            self.table.column(col, width=widths[col], anchor="w" if col == "task" else "center")
+            self.table.heading(col, text=self.t("col_" + col))
+            self.table.column(col, width=int(widths[col] * self.scale), anchor="w" if col == "task" else "center")
+        self.table.tag_configure("odd", background="#20232c")  # striped rows
+        self.table.tag_configure("gave_up", foreground=MUTED)
         self.table.pack(fill="both", expand=True)
+        self.no_games_label = tk.Label(games_card, text=self.t("no_games"), bg=CARD, fg=MUTED, font=(FONT, 10))
 
-        # Start
-        self.start_button = ttk.Button(self.root, text="START", style="Start.TButton", command=self.start_game)
-        self.start_button.pack(pady=12)
-        self.status_label = ttk.Label(self.root, text="", foreground="#aaa")
-        self.status_label.pack(pady=(0, 8))
+    def set_language(self, code):
+        if code == self.lang:
+            return
+        self.lang = code
+        self.config["language"] = code
+        self.config["model"] = self.model_var.get().strip()
+        self.config["level"] = self.level_var.get()
+        save_json(CONFIG_FILE, self.config)
+        # Simplest way to translate everything: destroy the window content and build it again
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        self.build_main_window()
+        self.refresh_stats()
+
+    def set_start_enabled(self, enabled):
+        if enabled:
+            self.start_button.configure(state="normal", bg=ACCENT)
+        else:
+            self.start_button.configure(state="disabled", bg=BORDER)
 
     def toggle_key(self):
         self.key_entry.configure(show="" if self.show_key.get() else "•")
@@ -411,7 +719,7 @@ class CadQuestApp:
     def save_key(self):
         self.config["api_key"] = self.key_var.get().strip()
         save_json(CONFIG_FILE, self.config)
-        self.status_label.configure(text="API key saved.")
+        self.status_label.configure(text=self.t("key_saved"))
         self.refresh_models()
 
     def api_key(self):
@@ -421,38 +729,58 @@ class CadQuestApp:
     def refresh_models(self):
         key = self.api_key()
         if not key:
-            messagebox.showwarning("CAD Quest", "Enter your Gemini API key first.")
+            messagebox.showwarning("CAD Quest", self.t("need_key"))
             return
-        self.status_label.configure(text="Loading model list...")
+        self.status_label.configure(text=self.t("models_loading"))
 
         def on_models(names):
+            self.model_names = names
             self.model_box.configure(values=names)
             if names and self.model_var.get() not in names:
                 # Prefer a "flash" model: fast and has the most generous free quota
                 flash = [n for n in names if "flash" in n and "lite" not in n]
                 self.model_var.set(flash[-1] if flash else names[-1])
-            self.status_label.configure(text=f"{len(names)} models available.")
+            self.status_label.configure(text=self.t("models_found", n=len(names)))
 
         self.run_in_background(lambda: list_models(key), on_models)
 
     def refresh_stats(self):
         for row in self.table.get_children():
             self.table.delete(row)
-        for game in reversed(self.history[-30:]):  # newest first
-            accuracy = "gave up" if game["gave_up"] else f"{game['accuracy']}%"
-            self.table.insert("", "end", values=(
-                game["date"], game["level"], game["task"],
+        for i, game in enumerate(reversed(self.history[-30:])):  # newest first
+            accuracy = self.t("gave_up_cell") if game["gave_up"] else f"{game['accuracy']}%"
+            tags = ["odd"] if i % 2 else []
+            if game["gave_up"]:
+                tags.append("gave_up")
+            self.table.insert("", "end", tags=tags, values=(
+                game["date"], self.t("level_" + game["level"]), game["task"],
                 format_time(game["seconds"]), accuracy, game["points"],
             ))
+        # Show a hint instead of an empty table
+        if self.history:
+            self.no_games_label.place_forget()
+        else:
+            self.no_games_label.place(relx=0.5, rely=0.6, anchor="center")
 
         xp = sum(g["points"] for g in self.history)
         finished = [g for g in self.history if not g["gave_up"]]
         avg = sum(g["accuracy"] for g in finished) / len(finished) if finished else 0
         best = max((g["points"] for g in self.history), default=0)
-        self.summary_label.configure(
-            text=f"Rank: {rank_for(xp)}   |   XP: {xp}   |   Games: {len(self.history)}   |   "
-                 f"Avg accuracy: {avg:.0f}%   |   Best game: {best} pts"
-        )
+
+        index = rank_index(xp)
+        self.rank_label.configure(text=f"★  {self.rank_name(index)}")
+        if index + 1 < len(RANKS):
+            low, high = RANKS[index][0], RANKS[index + 1][0]
+            self.xp_bar["value"] = (xp - low) / (high - low) * 100
+            self.next_rank_label.configure(text=self.t("next_rank", left=high - xp, rank=self.rank_name(index + 1)))
+        else:
+            self.xp_bar["value"] = 100
+            self.next_rank_label.configure(text=self.t("max_rank"))
+
+        self.tile_values["tile_xp"].configure(text=str(xp), fg=PURPLE)
+        self.tile_values["tile_games"].configure(text=str(len(self.history)))
+        self.tile_values["tile_avg"].configure(text=f"{avg:.0f}%")
+        self.tile_values["tile_best"].configure(text=str(best), fg=GOLD)
 
     # ---------- background work ----------
 
@@ -486,32 +814,34 @@ class CadQuestApp:
         poll()
 
     def on_error(self, error):
-        self.start_button.configure(state="normal")
+        self.set_start_enabled(True)
         self.status_label.configure(text="")
         if self.game_window:  # review failed - let the player press FINISH again
             self.game_window.title(f"CAD Quest - {self.task['title']}")
-            self.timer_label.configure(text=format_time(self.elapsed), font=("Consolas", 48, "bold"))
-        messagebox.showerror("CAD Quest", str(error), parent=self.game_window or self.root)
+            self.timer_label.configure(text=format_time(self.elapsed), font=(NUM_FONT, 54, "bold"))
+        message = self.t(error.key, **error.params) if isinstance(error, ApiError) else str(error)
+        messagebox.showerror("CAD Quest", message, parent=self.game_window or self.root)
 
     # ---------- 1. generate a task ----------
 
     def start_game(self):
         if not self.api_key():
-            messagebox.showwarning("CAD Quest", "Enter your Gemini API key first.")
+            messagebox.showwarning("CAD Quest", self.t("need_key"))
             return
         self.level = self.level_var.get()
         self.config["level"] = self.level
         self.config["model"] = self.model_var.get().strip()
         save_json(CONFIG_FILE, self.config)
 
-        self.start_button.configure(state="disabled")
-        self.status_label.configure(text="Gemini is designing your challenge...")
+        self.set_start_enabled(False)
+        self.status_label.configure(text=self.t("designing"))
 
         recent = [g["task"] for g in self.history[-15:]]
         prompt = (
             f"Level: {self.level}. Scope: {LEVELS[self.level]['scope']}\n"
             f"Time limit for the player: {LEVELS[self.level]['minutes']} minutes.\n"
-            f"Do not repeat these recent tasks: {recent or 'none'}."
+            f"Do not repeat these recent tasks: {recent or 'none'}.\n"
+            f"{GEMINI_LANGUAGE[self.lang]}"
         )
         key, model = self.api_key(), self.config["model"]
         self.run_in_background(
@@ -529,15 +859,20 @@ class CadQuestApp:
         overlay = tk.Toplevel(self.root)
         overlay.attributes("-fullscreen", True)
         overlay.attributes("-topmost", True)
-        overlay.configure(bg="black")
-        label = tk.Label(overlay, bg="black", fg=ACCENT, font=("Segoe UI", 200, "bold"))
-        label.pack(expand=True)
+        overlay.configure(bg=BG)
+        center = tk.Frame(overlay, bg=BG)
+        center.place(relx=0.5, rely=0.5, anchor="center")
+        number = tk.Label(center, bg=BG, font=(NUM_FONT, 220, "bold"))
+        number.pack()
+        tk.Label(center, text=f"{self.t('level_' + self.level)}  ·  {task['title']}",
+                 bg=BG, fg=MUTED, font=(FONT, 20)).pack()
 
-        steps = ["3", "2", "1", "GO!"]
+        steps = [("3", PURPLE), ("2", ACCENT), ("1", GOLD), (self.t("go"), GOOD)]
 
         def show_step(i):
             if i < len(steps):
-                label.configure(text=steps[i], fg=GOOD if steps[i] == "GO!" else ACCENT)
+                text, color = steps[i]
+                number.configure(text=text, fg=color)
                 overlay.after(1000, show_step, i + 1)  # non-blocking, like millis()
             else:
                 overlay.destroy()
@@ -552,49 +887,81 @@ class CadQuestApp:
         self.game_window = win
         win.title(f"CAD Quest - {self.task['title']}")
         win.configure(bg=BG)
-        win.geometry("460x620+20+20")
+        win.geometry(self.size(480, 680) + "+20+20")
         win.attributes("-topmost", True)  # stays above SolidWorks
         win.protocol("WM_DELETE_WINDOW", self.give_up)
 
         limit = LEVELS[self.level]["minutes"] * 60
-        self.timer_label = tk.Label(win, text="00:00", bg=BG, fg=ACCENT, font=("Consolas", 48, "bold"))
-        self.timer_label.pack(pady=(10, 0))
-        tk.Label(win, text=f"limit {format_time(limit)}  •  {self.level}", bg=BG, fg="#999").pack()
-
-        text = tk.Text(win, wrap="word", bg=PANEL, fg=FG, font=("Segoe UI", 10), relief="flat", padx=10, pady=10)
-        text.pack(fill="both", expand=True, padx=12, pady=10)
-        text.insert("end", self.task["title"] + "\n\n", "title")
-        text.insert("end", self.task["description"] + "\n\n")
-        for number, requirement in enumerate(self.task["requirements"], start=1):
-            text.insert("end", f"{number}. {requirement}\n")
-        box = " x ".join(f"{v:g}" for v in self.task["bounding_box_mm"])
-        text.insert("end", f"\nOverall size (X x Y x Z): {box} mm\n")
-        text.insert("end", "\nWhen done: take screenshots (isometric + front/top/right views help) "
-                           "and optionally File > Save As > STL.")
-        text.tag_configure("title", font=("Segoe UI", 14, "bold"), foreground=ACCENT)
-        text.configure(state="disabled")  # read-only
+        timer_card = make_card(win)
+        timer_card.outer.pack(fill="x", padx=12, pady=(12, 0))
+        self.timer_label = tk.Label(timer_card, text="00:00", bg=CARD, fg=ACCENT, font=(NUM_FONT, 54, "bold"))
+        self.timer_label.pack()
+        self.time_bar = ttk.Progressbar(timer_card, style="Time.Horizontal.TProgressbar", maximum=limit)
+        self.time_bar.pack(fill="x", pady=(4, 4))
+        tk.Label(timer_card, text=f"{self.t('limit', limit=format_time(limit))}  ·  {self.t('level_' + self.level)}",
+                 bg=CARD, fg=MUTED, font=(FONT, 9)).pack()
 
         buttons = tk.Frame(win, bg=BG)
-        buttons.pack(fill="x", padx=12, pady=(0, 12))
-        ttk.Button(buttons, text="Give up", command=self.give_up).pack(side="left")
-        ttk.Button(buttons, text="FINISH & upload", command=self.finish).pack(side="right")
+        buttons.pack(side="bottom", fill="x", padx=12, pady=(0, 12))
+        make_button(buttons, self.t("give_up"), self.give_up, kind="danger").pack(side="left")
+        make_button(buttons, self.t("finish"), self.finish, kind="primary").pack(side="right")
+
+        text = tk.Text(win, wrap="word", bg=CARD, fg=TEXT, font=(FONT, 10), relief="flat", padx=14, pady=12,
+                       highlightthickness=1, highlightbackground=BORDER, cursor="arrow", spacing1=2, spacing3=2)
+        text.pack(fill="both", expand=True, padx=12, pady=10)
+        text.insert("end", self.task["title"] + "\n", "title")
+        text.insert("end", self.task["description"] + "\n\n")
+        # Clickable checklist: each requirement gets its own tag, so a click knows which line it was
+        for number, requirement in enumerate(self.task["requirements"], start=1):
+            tag = f"req{number}"
+            text.insert("end", f"☐  {number}. {requirement}\n", ("req", tag))
+            text.tag_bind(tag, "<Button-1>", lambda e, tag=tag: self.toggle_requirement(text, tag))
+        box = " × ".join(f"{v:g}" for v in self.task["bounding_box_mm"])
+        text.insert("end", "\n" + self.t("overall", box=box) + "\n", "size")
+        text.insert("end", "\n" + self.t("done_hint"), "hint")
+        text.tag_configure("title", font=(NUM_FONT, 15, "bold"), foreground=ACCENT, spacing3=8)
+        text.tag_configure("req", lmargin2=28, spacing1=4)  # wrapped lines indent under the text
+        text.tag_configure("done", foreground=MUTED, overstrike=True)
+        text.tag_configure("size", foreground=GOLD, font=(FONT, 10, "bold"))
+        text.tag_configure("hint", foreground=MUTED, font=(FONT, 9, "italic"))
+        text.tag_bind("req", "<Enter>", lambda e: text.configure(cursor="hand2"))
+        text.tag_bind("req", "<Leave>", lambda e: text.configure(cursor="arrow"))
+        text.configure(state="disabled")  # read-only
 
         self.start_time = time.monotonic()  # monotonic = not affected by clock changes
         self.timer_running = True
         self.update_timer()
+
+    def toggle_requirement(self, text, tag):
+        """Swap ☐ <-> ☑ at the start of the clicked line and strike the line through."""
+        start, end = text.tag_ranges(tag)[:2]
+        text.configure(state="normal")  # a disabled Text can't be edited, even by code
+        ticked = text.get(start) == "☑"
+        text.delete(start)
+        text.insert(start, "☐" if ticked else "☑", ("req", tag))
+        if ticked:
+            text.tag_remove("done", start, end)
+        else:
+            text.tag_add("done", start, end)
+        text.configure(state="disabled")
 
     def update_timer(self):
         if not self.timer_running:
             return
         self.elapsed = time.monotonic() - self.start_time
         limit = LEVELS[self.level]["minutes"] * 60
-        color = BAD if self.elapsed > limit else ACCENT
+        if self.elapsed > limit:
+            color, style = BAD, "Over"
+        elif self.elapsed > 0.8 * limit:  # last 20% of the time -> warning color
+            color, style = GOLD, "Warn"
+        else:
+            color, style = ACCENT, "Time"
         self.timer_label.configure(text=format_time(self.elapsed), fg=color)
+        self.time_bar.configure(value=min(self.elapsed, limit), style=f"{style}.Horizontal.TProgressbar")
         self.root.after(200, self.update_timer)
 
     def give_up(self):
-        if not messagebox.askyesno("CAD Quest", "Give up this challenge? It counts as 0 points.",
-                                   parent=self.game_window):
+        if not messagebox.askyesno("CAD Quest", self.t("give_up_q"), parent=self.game_window):
             return
         self.timer_running = False
         self.save_game(accuracy=0, points=0, gave_up=True)
@@ -606,8 +973,8 @@ class CadQuestApp:
         self.timer_running = False  # time stops when you press FINISH, upload doesn't count
         paths = filedialog.askopenfilenames(
             parent=self.game_window,
-            title="Select screenshots (PNG/JPG) and optionally an STL file",
-            filetypes=[("Model files", "*.png *.jpg *.jpeg *.stl"), ("All files", "*.*")],
+            title=self.t("file_title"),
+            filetypes=[(self.t("file_types"), "*.png *.jpg *.jpeg *.stl"), (self.t("all_files"), "*.*")],
         )
         if not paths:
             self.timer_running = True  # cancelled -> keep counting
@@ -618,22 +985,23 @@ class CadQuestApp:
         images = [p for p in paths if p.lower().endswith((".png", ".jpg", ".jpeg"))][:MAX_IMAGES]
         stls = [p for p in paths if p.lower().endswith(".stl")]
         if not images and not stls:
-            messagebox.showwarning("CAD Quest", "Select at least one image or STL file.", parent=self.game_window)
+            messagebox.showwarning("CAD Quest", self.t("need_file"), parent=self.game_window)
             self.finish()
             return
 
-        self.game_window.title("CAD Quest - Gemini is checking your model...")
-        self.timer_label.configure(text="checking...", font=("Consolas", 28, "bold"))
+        self.game_window.title("CAD Quest - " + self.t("checking_title"))
+        self.timer_label.configure(text=self.t("checking"), font=(NUM_FONT, 30, "bold"))
 
         task = self.task
         key, model = self.api_key(), self.config["model"]
+        language = GEMINI_LANGUAGE[self.lang]
 
         def work():
             parts = [image_to_part(p) for p in images]
             report = "\n\n".join(read_stl(p) for p in stls) or "No STL provided."
             parts.append({"text": (
-                f"The exercise:\n{json.dumps(task, indent=2)}\n\n{report}\n\n"
-                "Grade the player's model."
+                f"The exercise:\n{json.dumps(task, indent=2, ensure_ascii=False)}\n\n{report}\n\n"
+                f"Grade the player's model. {language}"
             )})
             return ask_gemini(key, model, REVIEWER_SYSTEM, parts, REVIEW_SCHEMA)
 
@@ -647,47 +1015,57 @@ class CadQuestApp:
         bonus = round(25 * (1 - self.elapsed / limit)) if passed and self.elapsed < limit else 0
         points = round((accuracy + bonus) * LEVELS[self.level]["multiplier"])
 
-        old_rank = rank_for(sum(g["points"] for g in self.history))
+        old_rank = rank_index(sum(g["points"] for g in self.history))
         self.save_game(accuracy=accuracy, points=points, gave_up=False)
-        new_rank = rank_for(sum(g["points"] for g in self.history))
+        new_rank = rank_index(sum(g["points"] for g in self.history))
 
         self.end_game()
         self.show_result(review, accuracy, bonus, points, rank_up=new_rank if new_rank != old_rank else None)
 
     def show_result(self, review, accuracy, bonus, points, rank_up):
         win = tk.Toplevel(self.root)
-        win.title("CAD Quest - Result")
+        win.title("CAD Quest - " + self.t("result"))
         win.configure(bg=BG)
-        win.geometry("560x560")
+        win.geometry(self.size(600, 640) + "+60+20")
 
-        verdict, color = ("PASSED", GOOD) if review["passed"] else ("NOT PASSED", BAD)
-        tk.Label(win, text=verdict, bg=BG, fg=color, font=("Segoe UI", 28, "bold")).pack(pady=(14, 0))
-        tk.Label(win, text=f"+{points} XP", bg=BG, fg=ACCENT, font=("Segoe UI", 20, "bold")).pack()
-        tk.Label(win, bg=BG, fg=FG, text=(
-            f"Accuracy {accuracy}%  •  Time {format_time(self.elapsed)}  •  "
-            f"Time bonus +{bonus}  •  x{LEVELS[self.level]['multiplier']}"
+        verdict, color = (self.t("passed"), GOOD) if review["passed"] else (self.t("failed"), BAD)
+        tk.Label(win, text=verdict, bg=BG, fg=color, font=(NUM_FONT, 30, "bold")).pack(pady=(16, 0))
+        xp_label = tk.Label(win, text="+0 XP", bg=BG, fg=PURPLE, font=(NUM_FONT, 24, "bold"))
+        xp_label.pack()
+        tk.Label(win, bg=BG, fg=TEXT, font=(FONT, 10), text=self.t(
+            "result_line", acc=accuracy, time=format_time(self.elapsed), bonus=bonus,
+            mult=LEVELS[self.level]["multiplier"],
         )).pack(pady=4)
-        if rank_up:
-            tk.Label(win, text=f"RANK UP: {rank_up}!", bg=BG, fg="#ffd54f",
-                     font=("Segoe UI", 14, "bold")).pack()
+        if rank_up is not None:
+            tk.Label(win, text="★ " + self.t("rank_up", rank=self.rank_name(rank_up)), bg=BG, fg=GOLD,
+                     font=(NUM_FONT, 15, "bold")).pack()
 
-        text = tk.Text(win, wrap="word", bg=PANEL, fg=FG, font=("Segoe UI", 10), relief="flat", padx=10, pady=10)
-        text.pack(fill="both", expand=True, padx=12, pady=10)
+        # XP counts up from 0 in ~1 second (30 steps, 33 ms each)
+        def count_up(step=1):
+            xp_label.configure(text=f"+{round(points * step / 30)} XP")
+            if step < 30:
+                win.after(33, count_up, step + 1)
+
+        count_up()
+
+        make_button(win, self.t("close"), win.destroy).pack(side="bottom", pady=(0, 14))
+        text = tk.Text(win, wrap="word", bg=CARD, fg=TEXT, font=(FONT, 10), relief="flat", padx=14, pady=12,
+                       highlightthickness=1, highlightbackground=BORDER, spacing1=2)
+        text.pack(fill="both", expand=True, padx=14, pady=12)
         icons = {"ok": ("✔", "ok"), "wrong": ("✘", "wrong"), "not_visible": ("?", "unknown")}
         for check in review["checks"]:
             icon, tag = icons.get(check["status"], ("?", "unknown"))
-            text.insert("end", f"{icon} ", tag)
-            text.insert("end", f"{check['requirement']}\n")
-            text.insert("end", f"   {check['comment']}\n\n", "comment")
-        text.insert("end", "Feedback: ", "ok")
+            text.insert("end", f"{icon}  ", tag)
+            text.insert("end", f"{check['requirement']}\n", "req")
+            text.insert("end", f"{check['comment']}\n\n", "comment")
+        text.insert("end", self.t("feedback"), "ok")
         text.insert("end", review["feedback"])
-        text.tag_configure("ok", foreground=GOOD, font=("Segoe UI", 10, "bold"))
-        text.tag_configure("wrong", foreground=BAD, font=("Segoe UI", 10, "bold"))
-        text.tag_configure("unknown", foreground="#ffd54f", font=("Segoe UI", 10, "bold"))
-        text.tag_configure("comment", foreground="#aaa")
+        text.tag_configure("ok", foreground=GOOD, font=(FONT, 10, "bold"))
+        text.tag_configure("wrong", foreground=BAD, font=(FONT, 10, "bold"))
+        text.tag_configure("unknown", foreground=GOLD, font=(FONT, 10, "bold"))
+        text.tag_configure("req", lmargin2=24)
+        text.tag_configure("comment", foreground=MUTED, lmargin1=24, lmargin2=24)
         text.configure(state="disabled")
-
-        ttk.Button(win, text="Close", command=win.destroy).pack(pady=(0, 12))
 
     # ---------- end of game ----------
 
@@ -708,11 +1086,16 @@ class CadQuestApp:
             self.game_window.destroy()
             self.game_window = None
         self.root.deiconify()  # show main window again
-        self.start_button.configure(state="normal")
+        self.set_start_enabled(True)
         self.refresh_stats()
 
 
 if __name__ == "__main__":
+    # Tell Windows we handle high-DPI ourselves -> sharp text instead of blurry upscaling
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except (AttributeError, OSError):
+        pass  # not Windows, or an old Windows version
     root = tk.Tk()
     CadQuestApp(root)
     root.mainloop()

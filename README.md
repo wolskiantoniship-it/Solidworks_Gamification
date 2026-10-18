@@ -1,7 +1,7 @@
 # CAD Quest
 
 A Windows desktop game for practicing SolidWorks (or any 3D CAD program).
-Gemini makes up a part, you model it on the clock, and then Gemini checks your model (free tier).
+Gemini makes up a part, you model it on the clock, and then Gemini checks your model (free tier). English or Polish (EN / PL switch in the top-right corner).
 
 ## Run
 
